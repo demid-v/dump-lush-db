@@ -137,7 +137,7 @@ async function dumpDatabaseSplit(tables: DbTable[]) {
 
 const getSqlFilePrefix = () => {
   const zerosLength = prefixLength - sqlScriptIndex.toString().length;
-  let zeros: string = "";
+  let zeros = "";
 
   for (let index = 0; index < zerosLength; index++) {
     zeros += "0";

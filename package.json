@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
-    "lint": "next lint",
+    "lint": "eslint .",
     "start": "tsc && node ./build/index.js",
     "run": "node ./build/index.js",
     "release": "npm run run:docker && npm run docker:build && docker push demidv/lush-db:latest",
@@ -21,7 +21,6 @@
     "@typescript-eslint/parser": "^5.33.0",
     "dotenv": "^16.0.3",
     "eslint": "^8.26.0",
-    "eslint-config-next": "13.0.2",
     "typescript": "^4.8.4"
   }
 }
