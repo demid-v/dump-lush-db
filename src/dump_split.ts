@@ -1,17 +1,14 @@
 import * as http from "http";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
-import * as readline from "readline";
 import { spawn } from "child_process";
-import * as path from "path";
+import { dumpDir } from "./dir";
 
 dotenv.config();
 
 const SERVER_HOST = process.env.SERVER_HOST;
 const SERVER_PORT = process.env.SERVER_PORT;
 
-const defaultDumpDir = "./dump";
-let dumpDir = defaultDumpDir;
 let tablesCount = 0;
 let dumpedTableIndex = 0;
 
@@ -21,118 +18,38 @@ let sqlScriptIndex = 0;
 
 type DbTable = { name: string };
 
-(async () => {
-  await createDir();
+function dumpDatabaseSplit() {
+  http.get(`http://${SERVER_HOST}:${SERVER_PORT}/api/db-tables`, (response) => {
+    let body = "";
 
-  if (process.argv.slice(2)[0] === "--split") {
-    http.get(
-      `http://${SERVER_HOST}:${SERVER_PORT}/api/db-tables`,
-      (response) => {
-        let body = "";
-
-        response.on("data", (chunk) => {
-          body += chunk;
-        });
-
-        response.on("end", async () => {
-          const tables = JSON.parse(body);
-          tablesCount = tables.length;
-          prefixLength = getPrefixWidth(tables.length);
-
-          await dumpDatabaseSplit(tables);
-        });
-      }
-    );
-  } else {
-    await dumpDatabase();
-  }
-})();
-
-const getPrefixWidth = (tablesLength: number) =>
-  (tablesLength + relatedScriptsCount).toString().length;
-
-async function createDir() {
-  if (process.argv.slice(2)[1] !== "--default-dir") {
-    try {
-      dumpDir = await promptDirPath();
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  if (!fs.existsSync(dumpDir)) {
-    fs.mkdirSync(dumpDir);
-    console.log(`\`${dumpDir}\` directory created.`);
-  }
-
-  console.log(`Using \`${dumpDir}\` directory.`);
-}
-
-async function promptDirPath() {
-  return new Promise<string>((resolve, reject) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
+    response.on("data", (chunk) => {
+      body += chunk;
     });
 
-    let dirPath = "";
+    response.on("end", async () => {
+      const tables = JSON.parse(body);
+      console.log(tables);
 
-    rl.question("Directory: ", (dirPathOut) => {
-      dirPath = dirPathOut;
-      rl.close();
-    });
+      // tablesCount = tables.length;
+      // prefixLength = getPrefixWidth(tables.length);
 
-    rl.on("close", () => {
-      try {
-        if (fs.lstatSync(dirPath).isDirectory()) {
-          resolve(dirPath);
-        }
-
-        reject("Invalid directory path");
-      } catch (error) {
-        reject("Invalid directory path. " + error);
-      }
-    });
-
-    rl.on("error", () => {
-      reject("Error occured in `promptDirPath`");
+      // startDumpSplit(tables);
     });
   });
 }
 
-async function dumpDatabase() {
-  return new Promise<number>((resolve, reject) => {
-    console.log(`Dumping \`lush\` db...`);
+const getPrefixWidth = (tablesLength: number) =>
+  (tablesLength + relatedScriptsCount).toString().length;
 
-    const dumpSpawn = spawn("mysqldump", ["--databases", "lush", "--routines"]);
-
-    const fd = fs.openSync(`${dumpDir}/dump.sql`, "w");
-
-    dumpSpawn.stdout.on("data", (data) => {
-      fs.writeFileSync(fd, data);
-    });
-
-    dumpSpawn.on("exit", (code) => {
-      fs.close(fd);
-      code === 0 ? resolve(code) : reject(code);
-    });
-
-    dumpSpawn.on("error", (error) => {
-      fs.close(fd);
-      reject(error);
-    });
-  }).then(() => console.log(`\`lush\` db dumped.`));
-}
-
-async function dumpDatabaseSplit(tables: DbTable[]) {
-  console.log(`Dumping \`lush\` db...`);
+async function startDumpSplit(tables: DbTable[]) {
+  console.log("Dumping Lush database...");
 
   const pendingDumps = [];
   pendingDumps.push(dumpStructure(), dumpTables(tables), dumpRoutines());
 
   await Promise.allSettled(pendingDumps);
 
-  console.log(`\`lush\` db dumped.`);
+  console.log("Lush database dumped.");
 }
 
 const getSqlFilePrefix = () => {
@@ -150,10 +67,7 @@ async function dumpStructure() {
   return new Promise<number>((resolve, reject) => {
     console.log("Dumping structure...");
 
-    const dumpFilePath = path.resolve(
-      __dirname,
-      `${dumpDir}/${getSqlFilePrefix()}-structure-dump.sql`
-    );
+    const dumpFilePath = `${dumpDir}/${getSqlFilePrefix()}-structure-dump.sql`;
 
     const dumpSpawn = spawn("mysqldump", ["--databases", "lush", "--no-data"]);
 
@@ -187,12 +101,12 @@ async function dumpTables(tables: DbTable[]) {
 }
 
 function writeUseDb(filePath: string) {
-  fs.writeFileSync(filePath, `USE \`lush\`;\r\n\r\n`);
+  fs.writeFileSync(filePath, "USE `lush`;\r\n\r\n");
 }
 
 async function dumpTable(table: DbTable) {
   return new Promise<string>((resolve, reject) => {
-    console.log(`Dumping \`${table.name}\` table...`);
+    console.log(`Dumping "${table.name}" table...`);
 
     const dumpFilePath = `${dumpDir}/${getSqlFilePrefix()}-${
       table.name
@@ -224,7 +138,7 @@ async function dumpTable(table: DbTable) {
   })
     .then((tableName) => {
       console.log(
-        `${++dumpedTableIndex}/${tablesCount} \`${tableName}\` table dumped.`
+        `${++dumpedTableIndex}/${tablesCount} "${tableName}" table dumped.`
       );
     })
     .catch((error) => console.error(error));
@@ -267,3 +181,5 @@ async function dumpRoutines() {
     })
     .catch((error) => console.error(error));
 }
+
+export default dumpDatabaseSplit;
