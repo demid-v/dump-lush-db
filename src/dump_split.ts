@@ -16,26 +16,31 @@ const relatedScriptsCount = 2;
 let prefixLength = 0;
 let sqlScriptIndex = 0;
 
-type DbTable = { name: string };
+type DbTable = { name: string; where?: { [key: string]: number }[] };
 
 function dumpDatabaseSplit() {
-  http.get(`http://${SERVER_HOST}:${SERVER_PORT}/api/db-tables`, (response) => {
-    let body = "";
+  const endpoint =
+    process.argv.slice(2)[2] === "--preview" ? "preview" : "tables";
 
-    response.on("data", (chunk) => {
-      body += chunk;
-    });
+  http.get(
+    `http://${SERVER_HOST}:${SERVER_PORT}/api/${endpoint}`,
+    (response) => {
+      let body = "";
 
-    response.on("end", async () => {
-      const tables = JSON.parse(body);
-      console.log(tables);
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
 
-      // tablesCount = tables.length;
-      // prefixLength = getPrefixWidth(tables.length);
+      response.on("end", async () => {
+        const tables = JSON.parse(body);
 
-      // startDumpSplit(tables);
-    });
-  });
+        tablesCount = tables.length;
+        prefixLength = getPrefixWidth(tables.length);
+
+        startDumpSplit(tables);
+      });
+    }
+  );
 }
 
 const getPrefixWidth = (tablesLength: number) =>
@@ -114,19 +119,103 @@ async function dumpTable(table: DbTable) {
 
     writeUseDb(dumpFilePath);
 
+    (async () => {
+      if (table.where) {
+        const whereClauses: string[] = [];
+        const where: string[] = [];
+
+        for (const whereObj of table.where) {
+          const [key, value] = Object.entries(whereObj)[0];
+
+          const whereJoined = where.join(" or ");
+          if (`${whereJoined} or ${key}=${value}`.length > 255) {
+            whereClauses.push(whereJoined);
+            where.length = 0;
+          }
+
+          where.push(`${key}=${value}`);
+        }
+
+        if (where.length > 0) {
+          whereClauses.push(where.join(" or "));
+        }
+
+        for (const [index, whereClause] of whereClauses.entries()) {
+          await dumpIteration(
+            table,
+            dumpFilePath,
+            index + 1,
+            whereClauses.length,
+            whereClause
+          ).catch((error) => reject(error));
+        }
+      } else {
+        await dumpPart(table, dumpFilePath).catch((error) => reject(error));
+      }
+    })().then(() => resolve(table.name));
+  })
+    .then((tableName) => {
+      console.log(
+        `[${++dumpedTableIndex}/${tablesCount}] Table "${tableName}" dumped.`
+      );
+    })
+    .catch((error) => console.error(error));
+}
+
+async function dumpIteration(
+  table: DbTable,
+  dumpFilePath: string,
+  iterationIndex: number,
+  numOfIterations: number,
+  whereClause?: string
+) {
+  return dumpPart(
+    table,
+    dumpFilePath,
+    iterationIndex,
+    numOfIterations,
+    whereClause
+  ).then(() => {
+    console.log(
+      `[${iterationIndex}/${numOfIterations}] Iteration of table "${table.name}" done.`
+    );
+  });
+}
+
+async function dumpPart(
+  table: DbTable,
+  dumpFilePath: string,
+  iterationIndex?: number,
+  numOfIterations?: number,
+  whereClause?: string
+) {
+  return new Promise<string>((resolve, reject) => {
     const dumpSpawn = spawn("mysqldump", [
       "lush",
       table.name,
       "--no-create-info",
+      ...(whereClause ? ["--where", whereClause] : []),
     ]);
 
     const fd = fs.openSync(dumpFilePath, "a");
 
+    let body = "";
+
     dumpSpawn.stdout.on("data", (data) => {
-      fs.writeFileSync(fd, data);
+      body += data;
     });
 
     dumpSpawn.on("exit", (code) => {
+      if (iterationIndex !== 1) {
+        body = body.replace(`LOCK TABLES \`${table.name}\` WRITE;`, "");
+      }
+
+      if (iterationIndex < numOfIterations) {
+        body = body.slice(0, body.lastIndexOf("UNLOCK TABLES;"));
+      }
+
+      fs.writeFileSync(fd, body);
+
       fs.close(fd);
       code === 0 ? resolve(table.name) : reject(code);
     });
@@ -135,13 +224,7 @@ async function dumpTable(table: DbTable) {
       fs.close(fd);
       reject(error);
     });
-  })
-    .then((tableName) => {
-      console.log(
-        `${++dumpedTableIndex}/${tablesCount} "${tableName}" table dumped.`
-      );
-    })
-    .catch((error) => console.error(error));
+  });
 }
 
 async function dumpRoutines() {

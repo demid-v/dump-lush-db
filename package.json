@@ -7,13 +7,18 @@
     "build": "tsc",
     "dev": "tsc --watch --preserveWatchOutput",
     "lint": "eslint .",
-    "start": "npm run build && npm run run --",
-    "run": "node ./build/index.js",
+    "start": "npm run build && rmdir /s /q dump && npm run run --",
+    "run": "node build/index.js",
     "release": "npm run start:docker && npm run docker:build && docker push demidv/lush-db:latest",
     "start:docker": "npm start -- --split --default-dir",
     "docker:build": "docker build -t demidv/lush-db:latest .",
     "docker:start": "docker start -ai lush-db || npm run docker:run",
-    "docker:run": "docker run --name lush-db -p 3307:3307 -e MYSQL_TCP_PORT=3307 -e MYSQL_ROOT_PASSWORD=lush demidv/lush-db:latest"
+    "docker:run": "docker run --name lush-db -p 3307:3307 -e MYSQL_TCP_PORT=3307 -e MYSQL_ROOT_PASSWORD=lush demidv/lush-db:latest",
+    "release:preview": "npm run start:docker:preview && npm run docker:build:preview && docker push demidv/lush-db:preview.latest",
+    "start:docker:preview": "npm run start:docker -- --preview",
+    "docker:build:preview": "docker build -t demidv/lush-db:preview.latest .",
+    "docker:start:preview": "docker start -ai lush-db-preview || npm run docker:run:preview",
+    "docker:run:preview": "docker run --name lush-db-preview -p 3307:3307 -e MYSQL_TCP_PORT=3307 -e MYSQL_ROOT_PASSWORD=lush demidv/lush-db:preview.latest"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
