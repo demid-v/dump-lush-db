@@ -19,8 +19,9 @@ let sqlScriptIndex = 0;
 type DbTable = { name: string; where?: { [key: string]: number }[] };
 
 function dumpDatabaseSplit() {
-  const endpoint =
-    process.argv.slice(2)[2] === "--preview" ? "preview" : "tables";
+  const endpoint = process.argv.slice(2).includes("--preview")
+    ? "preview"
+    : "tables";
 
   http.get(
     `http://${SERVER_HOST}:${SERVER_PORT}/api/${endpoint}`,
@@ -31,7 +32,7 @@ function dumpDatabaseSplit() {
         body += chunk;
       });
 
-      response.on("end", async () => {
+      response.on("end", () => {
         const tables = JSON.parse(body);
 
         tablesCount = tables.length;
@@ -125,15 +126,21 @@ async function dumpTable(table: DbTable) {
         const where: string[] = [];
 
         for (const whereObj of table.where) {
-          const [key, value] = Object.entries(whereObj)[0];
+          const whereInner = [];
 
+          for (const [key, value] of Object.entries(whereObj)) {
+            whereInner.push(`${key}=${value}`);
+          }
+
+          const whereInnerJoined = whereInner.join(" and ");
           const whereJoined = where.join(" or ");
-          if (`${whereJoined} or ${key}=${value}`.length > 255) {
+
+          if (`${whereJoined} or ${whereInnerJoined}`.length > 256 * 50) {
             whereClauses.push(whereJoined);
             where.length = 0;
           }
 
-          where.push(`${key}=${value}`);
+          where.push(whereInnerJoined);
         }
 
         if (where.length > 0) {

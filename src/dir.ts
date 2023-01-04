@@ -5,7 +5,7 @@ const defaultDumpDir = "./dump";
 let dumpDir = defaultDumpDir;
 
 async function createDir() {
-  if (process.argv.slice(2)[1] !== "--default-dir") {
+  if (!process.argv.slice(2).includes("--default-dir")) {
     try {
       dumpDir = await promptDirPath();
     } catch (error) {
