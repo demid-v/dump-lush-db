@@ -1,79 +1,41 @@
-import * as http from "http";
-import * as dotenv from "dotenv";
 import * as fs from "fs";
 import { spawn } from "child_process";
 import { dumpDir } from "./dir";
+import { DbTable, getSqlFilePrefix, isSplit, tablesCount } from ".";
 
-dotenv.config();
-
-const SERVER_HOST = process.env.SERVER_HOST;
-const SERVER_PORT = process.env.SERVER_PORT;
-
-let tablesCount = 0;
 let dumpedTableIndex = 0;
 
-const relatedScriptsCount = 2;
-let prefixLength = 0;
-let sqlScriptIndex = 0;
-
-type DbTable = { name: string; where?: { [key: string]: number }[] };
-
-function dumpDatabaseSplit() {
-  const endpoint = process.argv.slice(2).includes("--preview")
-    ? "preview"
-    : "tables";
-
-  http.get(
-    `http://${SERVER_HOST}:${SERVER_PORT}/api/${endpoint}`,
-    (response) => {
-      let body = "";
-
-      response.on("data", (chunk) => {
-        body += chunk;
-      });
-
-      response.on("end", () => {
-        const tables = JSON.parse(body);
-
-        tablesCount = tables.length;
-        prefixLength = getPrefixWidth(tables.length);
-
-        startDumpSplit(tables);
-      });
-    }
-  );
-}
-
-const getPrefixWidth = (tablesLength: number) =>
-  (tablesLength + relatedScriptsCount).toString().length;
-
-async function startDumpSplit(tables: DbTable[]) {
+async function dumpDatabaseIterably(tables: DbTable[]) {
   console.log("Dumping Lush database...");
 
-  const pendingDumps = [];
-  pendingDumps.push(dumpStructure(), dumpTables(tables), dumpRoutines());
-
-  await Promise.allSettled(pendingDumps);
+  if (isSplit) {
+    await dumpAsynch(tables);
+  } else {
+    await dumpSynch(tables);
+  }
 
   console.log("Lush database dumped.");
 }
 
-const getSqlFilePrefix = () => {
-  const zerosLength = prefixLength - sqlScriptIndex.toString().length;
-  let zeros = "";
+async function dumpAsynch(tables: DbTable[]) {
+  const pendingDumps = [];
+  pendingDumps.push(dumpStructure(), dumpTables(tables), dumpRoutines());
+  await Promise.allSettled(pendingDumps);
+}
 
-  for (let index = 0; index < zerosLength; index++) {
-    zeros += "0";
-  }
-
-  return (zeros += sqlScriptIndex++);
-};
+async function dumpSynch(tables: DbTable[]) {
+  await dumpStructure();
+  await dumpTables(tables);
+  await dumpRoutines();
+}
 
 async function dumpStructure() {
   return new Promise<number>((resolve, reject) => {
     console.log("Dumping structure...");
 
-    const dumpFilePath = `${dumpDir}/${getSqlFilePrefix()}-structure-dump.sql`;
+    const dumpFilePath = isSplit
+      ? `${dumpDir}/${getSqlFilePrefix()}-structure-dump.sql`
+      : `${dumpDir}/dump.sql`;
 
     const dumpSpawn = spawn("mysqldump", ["--databases", "lush", "--no-data"]);
 
@@ -114,9 +76,9 @@ async function dumpTable(table: DbTable) {
   return new Promise<string>((resolve, reject) => {
     console.log(`Dumping "${table.name}" table...`);
 
-    const dumpFilePath = `${dumpDir}/${getSqlFilePrefix()}-${
-      table.name
-    }-dump.sql`;
+    const dumpFilePath = isSplit
+      ? `${dumpDir}/${getSqlFilePrefix()}-${table.name}-dump.sql`
+      : `${dumpDir}/dump.sql`;
 
     writeUseDb(dumpFilePath);
 
@@ -238,7 +200,9 @@ async function dumpRoutines() {
   return new Promise<number>((resolve, reject) => {
     console.log("Dumping routines...");
 
-    const dumpFilePath = `${dumpDir}/${getSqlFilePrefix()}-routines-dump.sql`;
+    const dumpFilePath = isSplit
+      ? `${dumpDir}/${getSqlFilePrefix()}-routines-dump.sql`
+      : `${dumpDir}/dump.sql`;
 
     writeUseDb(dumpFilePath);
 
@@ -272,4 +236,4 @@ async function dumpRoutines() {
     .catch((error) => console.error(error));
 }
 
-export default dumpDatabaseSplit;
+export default dumpDatabaseIterably;
