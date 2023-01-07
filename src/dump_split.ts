@@ -80,7 +80,9 @@ async function dumpTable(table: DbTable) {
       ? `${dumpDir}/${getSqlFilePrefix()}-${table.name}-dump.sql`
       : `${dumpDir}/dump.sql`;
 
-    writeUseDb(dumpFilePath);
+    if (isSplit) {
+      writeUseDb(dumpFilePath);
+    }
 
     (async () => {
       if (table.where) {
@@ -204,7 +206,9 @@ async function dumpRoutines() {
       ? `${dumpDir}/${getSqlFilePrefix()}-routines-dump.sql`
       : `${dumpDir}/dump.sql`;
 
-    writeUseDb(dumpFilePath);
+    if (isSplit) {
+      writeUseDb(dumpFilePath);
+    }
 
     const dumpSpawn = spawn("mysqldump", [
       "lush",

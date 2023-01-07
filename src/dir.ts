@@ -1,11 +1,12 @@
 import * as fs from "fs";
 import * as readline from "readline";
+import { argv } from ".";
 
 const defaultDumpDir = "./dump";
 let dumpDir = defaultDumpDir;
 
 async function createDir() {
-  if (!process.argv.slice(2).includes("--default-dir")) {
+  if (!argv.includes("--default-dir")) {
     try {
       dumpDir = await promptDirPath();
     } catch (error) {

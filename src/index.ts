@@ -21,9 +21,9 @@ let sqlScriptIndex = 0;
 
 type DbTable = { name: string; where?: { [key: string]: number }[] };
 
-createDir().then(async () => {
-  const argv = process.argv.slice(2);
+const argv = process.argv.slice(2);
 
+createDir().then(async () => {
   if (argv.includes("--preview")) {
     isPreview = true;
     endpoint = "preview";
@@ -80,5 +80,5 @@ const getSqlFilePrefix = () => {
   return (zeros += sqlScriptIndex++);
 };
 
-export { isSplit, tablesCount, getSqlFilePrefix };
+export { isSplit, tablesCount, argv, getSqlFilePrefix };
 export type { DbTable };
