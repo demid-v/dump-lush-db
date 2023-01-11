@@ -1,15 +1,16 @@
 import * as fs from "fs";
 import { spawn } from "child_process";
 import { dumpDir } from "./dir";
-import { DbTable, getSqlFilePrefix, isSplit, tablesCount } from ".";
+import { getSqlFilePrefix, isSplit, tablesCount } from ".";
+import { TablePreview } from "./types";
 
 let dumpedTableIndex = 0;
 
-async function dumpDatabaseIterably(tables: DbTable[]) {
+async function dumpDatabaseIterably(tables: TablePreview[]) {
   console.log("Dumping Lush database...");
 
   if (isSplit) {
-    await dumpAsynch(tables);
+    await dump(tables);
   } else {
     await dumpSynch(tables);
   }
@@ -17,13 +18,13 @@ async function dumpDatabaseIterably(tables: DbTable[]) {
   console.log("Lush database dumped.");
 }
 
-async function dumpAsynch(tables: DbTable[]) {
+async function dump(tables: TablePreview[]) {
   const pendingDumps = [];
   pendingDumps.push(dumpStructure(), dumpTables(tables), dumpRoutines());
   await Promise.allSettled(pendingDumps);
 }
 
-async function dumpSynch(tables: DbTable[]) {
+async function dumpSynch(tables: TablePreview[]) {
   await dumpStructure();
   await dumpTables(tables);
   await dumpRoutines();
@@ -59,7 +60,7 @@ async function dumpStructure() {
     .catch((error) => console.error(error));
 }
 
-async function dumpTables(tables: DbTable[]) {
+async function dumpTables(tables: TablePreview[]) {
   const pendingDumps = [];
   for (const table of tables) {
     pendingDumps.push(dumpTable(table));
@@ -72,7 +73,7 @@ function writeUseDb(filePath: string) {
   fs.writeFileSync(filePath, "USE `lush`;\r\n\r\n");
 }
 
-async function dumpTable(table: DbTable) {
+async function dumpTable(table: TablePreview) {
   return new Promise<string>((resolve, reject) => {
     console.log(`Dumping "${table.name}" table...`);
 
@@ -121,7 +122,7 @@ async function dumpTable(table: DbTable) {
           ).catch((error) => reject(error));
         }
       } else {
-        await dumpPart(table, dumpFilePath).catch((error) => reject(error));
+        await dumpPart(table, dumpFilePath, 1).catch((error) => reject(error));
       }
     })().then(() => resolve(table.name));
   })
@@ -134,7 +135,7 @@ async function dumpTable(table: DbTable) {
 }
 
 async function dumpIteration(
-  table: DbTable,
+  table: TablePreview,
   dumpFilePath: string,
   iterationIndex: number,
   numOfIterations: number,
@@ -154,9 +155,9 @@ async function dumpIteration(
 }
 
 async function dumpPart(
-  table: DbTable,
+  table: TablePreview,
   dumpFilePath: string,
-  iterationIndex?: number,
+  iterationIndex: number,
   numOfIterations?: number,
   whereClause?: string
 ) {
@@ -177,11 +178,11 @@ async function dumpPart(
     });
 
     dumpSpawn.on("exit", (code) => {
-      if (iterationIndex !== 1) {
+      if (iterationIndex !== 1 && isSplit) {
         body = body.replace(`LOCK TABLES \`${table.name}\` WRITE;`, "");
       }
 
-      if (iterationIndex < numOfIterations) {
+      if (iterationIndex < numOfIterations && isSplit) {
         body = body.slice(0, body.lastIndexOf("UNLOCK TABLES;"));
       }
 

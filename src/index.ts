@@ -1,17 +1,13 @@
 import createDir from "./dir";
 import dumpDatabaseIterably from "./dump_split";
 import dumpDatabase from "./dump";
-import * as http from "http";
 import * as dotenv from "dotenv";
+import { fetchPreview, fetchTables } from "./queries";
 
 let isPreview = false;
 let isSplit = false;
-let endpoint = "tables";
 
 dotenv.config();
-
-const SERVER_HOST = process.env.SERVER_HOST;
-const SERVER_PORT = process.env.SERVER_PORT;
 
 let tablesCount = 0;
 
@@ -19,14 +15,11 @@ const relatedScriptsCount = 2;
 let prefixLength = 0;
 let sqlScriptIndex = 0;
 
-type DbTable = { name: string; where?: { [key: string]: number }[] };
-
 const argv = process.argv.slice(2);
 
 createDir().then(async () => {
   if (argv.includes("--preview")) {
     isPreview = true;
-    endpoint = "preview";
   }
 
   if (argv.includes("--split")) {
@@ -45,25 +38,10 @@ createDir().then(async () => {
   }
 });
 
-function requestTables() {
-  return new Promise<DbTable[]>((resolve, reject) => {
-    http.get(
-      `http://${SERVER_HOST}:${SERVER_PORT}/api/${endpoint}`,
-      (response) => {
-        let body = "";
+async function requestTables() {
+  const tables = await (isPreview ? fetchPreview() : fetchTables());
 
-        response.on("data", (chunk) => {
-          body += chunk;
-        });
-
-        response.on("end", () => {
-          resolve(JSON.parse(body));
-        });
-
-        response.on("error", (error) => reject(error));
-      }
-    );
-  });
+  return tables;
 }
 
 const getPrefixWidth = (tablesLength: number) =>
@@ -81,4 +59,3 @@ const getSqlFilePrefix = () => {
 };
 
 export { isSplit, tablesCount, argv, getSqlFilePrefix };
-export type { DbTable };
